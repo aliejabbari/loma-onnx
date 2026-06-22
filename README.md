@@ -193,20 +193,11 @@ cpp/                 reusable C++ library (ORT + OpenCV), CMake, examples
 onnx/                exported models           docs/  charts + benchmark.json
 ```
 
-## Publishing
-**As a standalone repo** (`loma-onnx`):
-```bash
-git init && git add export_*.py compare_onnx.py bench_sweep.py benchmark_*.py \
-    build_ort_gpu.sh cpp/ docs/ ONNX_DEPLOY.md
-# ship models as release assets (they're git-ignored): gh release create v1.0 onnx/*.onnx
-```
-Use `ONNX_DEPLOY.md` as the repo `README.md`. Attach the exported `.onnx` files to a
-GitHub Release (or track with Git LFS) since several exceed 100 MB.
+> **Note:** several model files exceed GitHub's 100 MB limit (`loma_matcher_G`,
+> `loma_matcher_L`, `loma_descriptor_dedode_g`) and are git-ignored — they're attached to
+> the GitHub Release, or regenerate any model with `export_onnx.py` / `export_jetson.py`.
 
-**As a PR to upstream LoMa**: see [`PR_DESCRIPTION.md`](PR_DESCRIPTION.md) — adds the
-export scripts, the C++ library, and this guide without touching the PyTorch code.
-
-## How it was exported (notes for reproducers / upstream PR)
+## Implementation notes
 - Uses the **dynamo (torch.export) ONNX exporter** — the legacy TorchScript exporter
   emits ORT-invalid graphs here (bad `Concat` axis, `MaxPool` dilations).
 - DINOv2's `@torch.compiler.disable` + internal `inference_mode` are stripped for export.
@@ -215,5 +206,31 @@ export scripts, the C++ library, and this guide without touching the PyTorch cod
   `if B == 0`).
 - Weights are consolidated into single self-contained `.onnx` files.
 
-Thanks to the LoMa authors (Nordström, Edstedt, et al.) and Parskatt — see the upstream
-[README](README.md) for the papers and citation.
+## Author
+Built by **Ali Jabbari** — [@aliejabbari](https://github.com/aliejabbari).
+
+This project is the deployment layer for LoMa that I built end-to-end: ONNX export of the
+full model family, a reusable C++ inference library, a from-source `onnxruntime-gpu` build
+for the DGX Spark (GB10 / sm_121, where no prebuilt wheel exists), real on-device Jetson
+Orin Nano enablement (incl. solving the Tegra CUDA setup), and the full benchmark +
+validation suite with charts. Contributions, issues, and stars are welcome. ⭐
+
+## Acknowledgements
+All credit for the matching models goes to the original **LoMa** authors — David Nordström,
+Johan Edstedt, Georg Bökman, et al. (ECCV 2026) — and to the DeDoDe / DaD work by
+[Parskatt](https://github.com/Parskatt). Please cite their papers if you use the models:
+
+```bibtex
+@inproceedings{nordstrom2026loma,
+  title     = {LoMa: Local Feature Matching Revisited},
+  author    = {Nordstr\"om, David and Edstedt, Johan and B\"okman, Georg and others},
+  booktitle = {Proceedings of the European Conference on Computer Vision (ECCV)},
+  year      = {2026}
+}
+```
+
+Upstream model code: <https://github.com/davnords/LoMa>.
+
+## License
+MIT for this deployment code. The exported matcher inherits LightGlue's Apache-2.0
+license; the models inherit their respective upstream licenses.
