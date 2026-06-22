@@ -83,6 +83,46 @@ fraction of ONNX matches within 2 px of PyTorch.
 
 ---
 
+## On-device: Jetson Orin Nano 8 GB (measured)
+Real numbers from a Jetson Orin Nano 8 GB (JetPack 6.2, CUDA 12.6, cuDNN 9.3) running
+the B128 pipeline through **onnxruntime 1.24 CUDA EP**.
+
+<p align="center"><img src="docs/jetson_vs_gb10.png" width="92%"/></p>
+
+| preset | det / kpts | detect | describe | match | **total** | **FPS** | #matches |
+|--------|-----------|--------|----------|-------|-------|-----|----------|
+| **pico** | 256² / 512 | 67 | 120 | 57 | **245 ms** | **4.1** | 282 |
+| **nano** | 256² / 1024 | 68 | 121 | 133 | **322 ms** | **3.1** | 539 |
+| turbo | 384² / 1024 | 147 | 266 | 133 | 545 ms | 1.8 | 562 |
+| fast | 512² / 1024 | 248 | 447 | 133 | 828 ms | 1.2 | 555 |
+| balanced | 640² / 1536 | 389 | 705 | 244 | 1339 ms | 0.75 | 798 |
+| wide | 512×1024 / 2048 | 504 | 447 | 341 | 1292 ms | 0.77 | 1093 |
+| quality | 1024² / 2048 | — | — | — | **OOM (>8 GB)** | — | — |
+
+<p align="center"><img src="docs/jetson_latency.png" width="62%"/></p>
+
+> - **GPU confirmed on the Orin's iGPU** (`provider = CUDAExecutionProvider`).
+> - **Cross-platform correctness:** Orin match counts are **identical to the GB10**
+>   (nano 539, fast 555, balanced 798, wide 1093) — same ONNX, same outputs.
+> - **Use `pico` (4.1 FPS) / `nano` (3.1 FPS)** for near-real-time on the Orin Nano.
+> - `quality` (1024²) **OOMs** the 8 GB device under the CUDA EP — cap at `wide`; run one
+>   preset per process to avoid accumulating CUDA contexts. TensorRT FP16 (needs
+>   `libnvinfer`) would lower both latency and memory.
+> - Orin Nano is **~4–6× slower** than the GB10 across presets.
+
+### Setting up onnxruntime-gpu on a bare Jetson (the gotcha)
+The PyPI `nvidia-*-cu12` CUDA wheels are **sbsa/dGPU** builds and **fail on Tegra**
+(`CUBLAS_STATUS_ALLOC_FAILED`). Install **JetPack's Tegra-native** CUDA instead:
+```bash
+# onnxruntime-gpu wheel (Jetson):  https://pypi.jetson-ai-lab.io/jp6/cu126
+sudo apt-get install -y cuda-cudart-12-6 libcublas-12-6 libcufft-12-6 libcudnn9-cuda-12
+export LD_LIBRARY_PATH=/usr/local/cuda-12.6/targets/aarch64-linux/lib:/usr/lib/aarch64-linux-gnu
+python3 jetson_bench.py --presets pico nano turbo fast --iters 15   # CUDA EP
+```
+`jetson_bench.py` is a dependency-light (numpy + PIL + onnxruntime) on-device runner.
+
+---
+
 ## Quickstart — Python (ONNX Runtime)
 ```bash
 pip install -r requirements.txt
@@ -146,6 +186,8 @@ compare_onnx.py      end-to-end ONNX-vs-PyTorch comparison
 bench_sweep.py       GPU benchmark sweep + charts  → docs/
 benchmark_gpu.py     PyTorch-CUDA latency reference
 viz_matches.py       qualitative match figure (docs/matches.png)
+jetson_bench.py      on-device ONNX benchmark for Jetson (numpy + PIL only)
+jetson_charts.py     Jetson charts + GB10-vs-Orin comparison  → docs/
 build_ort_gpu.sh     build onnxruntime-gpu for DGX Spark GB10 (sm_121)
 cpp/                 reusable C++ library (ORT + OpenCV), CMake, examples
 onnx/                exported models           docs/  charts + benchmark.json
