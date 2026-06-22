@@ -16,17 +16,21 @@
 
 #include "loma/loma.hpp"
 
-struct Preset { int det, desc, kpts; };
+struct Preset { int detH, detW, desc, kpts; };  // detW==detH unless landscape
 static const std::map<std::string, Preset> kPresets = {
-    {"fast", {512, 512, 1024}},
-    {"balanced", {640, 640, 1536}},
-    {"quality", {1024, 784, 2048}},
+    {"pico",     {256, 256, 256, 512}},
+    {"nano",     {256, 256, 256, 1024}},
+    {"turbo",    {384, 384, 384, 1024}},
+    {"fast",     {512, 512, 512, 1024}},
+    {"balanced", {640, 640, 640, 1536}},
+    {"quality",  {1024, 1024, 784, 2048}},
+    {"wide",     {512, 1024, 512, 2048}},
 };
 
 int main(int argc, char** argv) {
   if (argc < 4) {
-    std::cerr << "usage: " << argv[0]
-              << " <onnx_dir> <imgA> <imgB> [fast|balanced|quality] [out.jpg]\n";
+    std::cerr << "usage: " << argv[0] << " <onnx_dir> <imgA> <imgB>"
+              << " [pico|nano|turbo|fast|balanced|quality|wide] [out.jpg]\n";
     return 1;
   }
   std::string dir = argv[1], pa = argv[2], pb = argv[3];
@@ -39,7 +43,8 @@ int main(int argc, char** argv) {
   opt.detector_path   = dir + "/loma_detector_" + preset + ".onnx";
   opt.descriptor_path = dir + "/loma_descriptor_dedode_b_" + preset + ".onnx";
   opt.matcher_path    = dir + "/loma_matcher_B128.onnx";
-  opt.detector_size = p.det;
+  opt.detector_size = p.detH;
+  opt.detector_width = p.detW;
   opt.descriptor_size = p.desc;
   opt.num_keypoints = p.kpts;
   opt.descriptor_dim = 128;            // B128 -> DeDoDe-B

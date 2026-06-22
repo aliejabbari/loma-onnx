@@ -16,17 +16,17 @@ inline double ms_since(const Clock::time_point& t0) {
   return std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
 }
 
-// Resize a BGR image to a square `side` and pack as float CHW RGB in [0, 1].
-std::vector<float> preprocess(const cv::Mat& bgr, int side) {
+// Resize a BGR image to H×W and pack as float CHW RGB in [0, 1].
+std::vector<float> preprocess(const cv::Mat& bgr, int H, int W) {
   cv::Mat resized, rgb;
-  cv::resize(bgr, resized, cv::Size(side, side), 0, 0, cv::INTER_LINEAR);
+  cv::resize(bgr, resized, cv::Size(W, H), 0, 0, cv::INTER_LINEAR);  // cv::Size is (w,h)
   cv::cvtColor(resized, rgb, cv::COLOR_BGR2RGB);
   rgb.convertTo(rgb, CV_32FC3, 1.0 / 255.0);
-  std::vector<float> chw(static_cast<size_t>(3) * side * side);
+  std::vector<float> chw(static_cast<size_t>(3) * H * W);
   std::vector<cv::Mat> ch(3);
   // point each channel Mat at the right slice of `chw` so split writes CHW directly
   for (int c = 0; c < 3; ++c)
-    ch[c] = cv::Mat(side, side, CV_32F, chw.data() + static_cast<size_t>(c) * side * side);
+    ch[c] = cv::Mat(H, W, CV_32F, chw.data() + static_cast<size_t>(c) * H * W);
   cv::split(rgb, ch);
   return chw;
 }
@@ -127,9 +127,11 @@ struct LoMa::Impl {
     f.image_size = bgr.size();
     const int N = opt.num_keypoints, D = opt.descriptor_dim;
 
-    // detector
-    auto det_in = preprocess(bgr, opt.detector_size);
-    std::vector<int64_t> det_shape{1, 3, opt.detector_size, opt.detector_size};
+    // detector (square unless detector_width is set, e.g. wide = 512×1024)
+    const int detH = opt.detector_size;
+    const int detW = opt.detector_width > 0 ? opt.detector_width : opt.detector_size;
+    auto det_in = preprocess(bgr, detH, detW);
+    std::vector<int64_t> det_shape{1, 3, detH, detW};
     Ort::Value dv = tensor(det_in, det_shape);
     auto det_out = detector.session->Run(Ort::RunOptions{nullptr}, detector.in_c.data(),
                                          &dv, 1, detector.out_c.data(),
@@ -142,8 +144,8 @@ struct LoMa::Impl {
     f.kpts.assign(kp, kp + static_cast<size_t>(N) * 2);
     f.probs.assign(pr, pr + N);
 
-    // descriptor (image + the detector's keypoints)
-    auto dsc_in = preprocess(bgr, opt.descriptor_size);
+    // descriptor (image + the detector's keypoints); always square
+    auto dsc_in = preprocess(bgr, opt.descriptor_size, opt.descriptor_size);
     std::vector<int64_t> dsc_shape{1, 3, opt.descriptor_size, opt.descriptor_size};
     std::vector<int64_t> kpt_shape{1, N, 2};
     std::vector<Ort::Value> dsc_inputs;

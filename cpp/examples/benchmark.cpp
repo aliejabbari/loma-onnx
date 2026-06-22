@@ -16,11 +16,15 @@
 
 #include "loma/loma.hpp"
 
-struct Preset { int det, desc, kpts; };
+struct Preset { int detH, detW, desc, kpts; };
 static const std::map<std::string, Preset> kPresets = {
-    {"fast", {512, 512, 1024}},
-    {"balanced", {640, 640, 1536}},
-    {"quality", {1024, 784, 2048}},
+    {"pico",     {256, 256, 256, 512}},
+    {"nano",     {256, 256, 256, 1024}},
+    {"turbo",    {384, 384, 384, 1024}},
+    {"fast",     {512, 512, 512, 1024}},
+    {"balanced", {640, 640, 640, 1536}},
+    {"quality",  {1024, 1024, 784, 2048}},
+    {"wide",     {512, 1024, 512, 2048}},
 };
 
 static double pct(std::vector<double> v, double q) {
@@ -35,8 +39,8 @@ static double mean(const std::vector<double>& v) {
 
 int main(int argc, char** argv) {
   if (argc < 4) {
-    std::cerr << "usage: " << argv[0]
-              << " <onnx_dir> <imgA> <imgB> [fast|balanced|quality] [iters]\n";
+    std::cerr << "usage: " << argv[0] << " <onnx_dir> <imgA> <imgB>"
+              << " [pico|nano|turbo|fast|balanced|quality|wide] [iters]\n";
     return 1;
   }
   std::string dir = argv[1], pa = argv[2], pb = argv[3];
@@ -48,7 +52,8 @@ int main(int argc, char** argv) {
   opt.detector_path   = dir + "/loma_detector_" + preset + ".onnx";
   opt.descriptor_path = dir + "/loma_descriptor_dedode_b_" + preset + ".onnx";
   opt.matcher_path    = dir + "/loma_matcher_B128.onnx";
-  opt.detector_size = p.det; opt.descriptor_size = p.desc;
+  opt.detector_size = p.detH; opt.detector_width = p.detW;
+  opt.descriptor_size = p.desc;
   opt.num_keypoints = p.kpts; opt.descriptor_dim = 128;
   opt.provider = loma::Provider::Auto;
   opt.verbose = true;
@@ -74,8 +79,8 @@ int main(int argc, char** argv) {
   }
 
   std::cout << "\n==== LoMa C++ benchmark ====\n";
-  std::cout << "preset       : " << preset << " (det " << p.det << ", desc " << p.desc
-            << ", " << p.kpts << " kpts)\n";
+  std::cout << "preset       : " << preset << " (det " << p.detH << "x" << p.detW
+            << ", desc " << p.desc << ", " << p.kpts << " kpts)\n";
   std::cout << "provider     : " << model.provider() << "\n";
   std::cout << "iters        : " << iters << "\n";
   std::cout << "#matches     : " << nmatch << "\n";

@@ -19,7 +19,8 @@ lives alongside it.
 - **Runs on GPU via ONNX Runtime CUDA EP** — including a from-source `onnxruntime-gpu`
   build for the **DGX Spark GB10** (sm_121, CUDA 13), where no prebuilt wheel exists.
 - **C++ library** (`cpp/`) with a 3-line API, CUDA→CPU fallback, and `find_package(LoMa)`.
-- **Presets** (`fast` / `balanced` / `quality` / `wide` / …) trade latency for matches.
+- **Presets** from `pico` (256², **22 FPS**) → `nano` → `turbo` → `fast` → `quality` (1024²),
+  plus landscape `wide` (512×1024) — trade latency for matches.
 
 ---
 
@@ -53,21 +54,32 @@ detector/descriptor are **shared** instead of duplicated per variant.
 `total` is the cost of one `match()` (detect ×2 + describe ×2 + match). `fidelity` =
 fraction of ONNX matches within 2 px of PyTorch.
 
-| preset | detector | desc | kpts | total | FPS | #matches | fidelity |
-|--------|----------|------|------|-------|-----|----------|----------|
-| **fast** | 512² | 512 | 1024 | **175 ms** | **5.7** | 555 | 99.5% |
-| **fast-2k** | 512² | 512 | 2048 | 239 ms | 4.2 | **1117** | 99.5% |
-| mid | 640² | 640 | 1024 | 257 ms | 3.9 | 531 | 99.8% |
-| balanced | 640² | 640 | 1536 | 283 ms | 3.5 | 797 | 99.3% |
-| quality | 1024² | 784 | 2048 | 544 ms | 1.8 | 944 | 99.4% |
-| **wide** | 512×1024 | 512 | 2048 | 283 ms | 3.5 | **1093** | 99.5% |
+| preset | detector | kpts | total | FPS | matches | inliers (F,3px) | fidelity |
+|--------|----------|------|-------|-----|---------|-----------------|----------|
+| **pico** | 256² | 512 | **44 ms** | **22.5** | 282 | 164 (58%) | 99.3% |
+| **nano** | 256² | 1024 | **57 ms** | **17.4** | 540 | 333 (62%) | 99.3% |
+| turbo | 384² | 1024 | 102 ms | 9.8 | 561 | 410 (73%) | 99.5% |
+| **turbo-2k** | 384² | 2048 | 162 ms | 6.2 | 1063 | 782 (74%) | 99.5% |
+| fast | 512² | 1024 | 178 ms | 5.6 | 555 | 417 (75%) | 99.5% |
+| fast-2k | 512² | 2048 | 236 ms | 4.2 | **1117** | 884 (79%) | 99.5% |
+| balanced | 640² | 1536 | 304 ms | 3.3 | 797 | 635 (80%) | 99.3% |
+| **wide** | 512×1024 | 2048 | 304 ms | 3.3 | 1093 | **901 (82%)** | 99.5% |
+| quality | 1024² | 2048 | 589 ms | 1.7 | 944 | 771 (82%) | 99.4% |
 
+<p align="center"><img src="docs/inliers.png" width="62%"/></p>
 <p align="center"><img src="docs/fps.png" width="49%"/><img src="docs/latency_scaling.png" width="49%"/></p>
 
-> **Insight:** on B128, *more keypoints* beats *more resolution*. `fast-2k` (512² + 2048 kpts)
-> finds **more** matches than `quality` (1024²) at **half** the latency — `quality` is
-> Pareto-dominated. Pick `fast` for pure speed, `fast-2k`/`wide` for the most matches.
-> GB10 is far faster than the Orin Nano — run `cpp/loma_bench` on-device for target numbers.
+> **Insights** (B128):
+> - **More keypoints beats more resolution.** `turbo-2k` (384² + 2048 kpts) → **782 inliers**
+>   at 162 ms, beating `quality` (1024²) **771 inliers** at 589 ms on *both* axes.
+> - **Low resolution stays useful** — `nano` (256²) still yields **333 RANSAC inliers** at
+>   **17.4 FPS** (3× faster than `fast`). Great Jetson real-time default.
+> - **Resolution buys precision, not count.** Inlier *ratio* climbs 58% → 82% from `pico`
+>   to `wide`; pick higher-res presets when geometric precision matters.
+> - `pico` for max throughput (22.5 FPS); `wide`/`fast-2k` for the most verified inliers.
+>
+> RANSAC inliers = fundamental matrix (USAC_MAGSAC, 3 px). GB10 ≫ Orin Nano — run
+> `cpp/loma_bench` on-device for target numbers (the *relative* ordering holds).
 
 ---
 

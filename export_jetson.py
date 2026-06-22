@@ -24,6 +24,10 @@ import export_onnx as E
 # desc resolution per arch must satisfy: dedode_g -> divisible by 14.
 # `det` is a square side (int) or a (H, W) tuple for non-square / landscape inputs.
 PRESETS = {
+    # ultra-fast presets for Jetson Orin Nano real-time (dedode_g side must be /14)
+    "pico":     dict(det=256,         desc={"dedode_b": 256, "dedode_g": 252}, kpts=512),
+    "nano":     dict(det=256,         desc={"dedode_b": 256, "dedode_g": 252}, kpts=1024),
+    "turbo":    dict(det=384,         desc={"dedode_b": 384, "dedode_g": 378}, kpts=1024),
     "fast":     dict(det=512,         desc={"dedode_b": 512, "dedode_g": 518}, kpts=1024),
     "balanced": dict(det=640,         desc={"dedode_b": 640, "dedode_g": 630}, kpts=1536),
     "quality":  dict(det=1024,        desc={"dedode_b": 784, "dedode_g": 784}, kpts=2048),

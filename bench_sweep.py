@@ -28,12 +28,15 @@ ITERS, WARMUP = 30, 12
 
 # name, detector (H, W), descriptor side, keypoints
 CONFIGS = [
+    dict(name="pico",      det=(256, 256),  desc=256, kpts=512),   # fastest (Jetson RT)
+    dict(name="nano",      det=(256, 256),  desc=256, kpts=1024),  # ~4x faster than fast
+    dict(name="turbo",     det=(384, 384),  desc=384, kpts=1024),  # ~2x faster than fast
+    dict(name="turbo-2k",  det=(384, 384),  desc=384, kpts=2048),  # fast + many matches
     dict(name="fast",      det=(512, 512),  desc=512, kpts=1024),
     dict(name="fast-2k",   det=(512, 512),  desc=512, kpts=2048),
-    dict(name="mid",       det=(640, 640),  desc=640, kpts=1024),
     dict(name="balanced",  det=(640, 640),  desc=640, kpts=1536),
-    dict(name="quality",   det=(1024, 1024), desc=784, kpts=2048),
     dict(name="wide",      det=(512, 1024), desc=512, kpts=2048),
+    dict(name="quality",   det=(1024, 1024), desc=784, kpts=2048),
 ]
 
 PALETTE = dict(detect="#4C72B0", describe="#DD8452", match="#55A868",
@@ -120,6 +123,19 @@ def overlap(P, Q, tol=2.0):
     return float(((d[..., 0] < tol) & (d[..., 1] < tol)).any(1).mean())
 
 
+def ransac_inliers(P, thresh=3.0):
+    """Geometric-verification inliers via a fundamental matrix (USAC_MAGSAC),
+    matching LoMa's own RANSAC usage. Returns (n_inliers, inlier_ratio)."""
+    import cv2
+    if len(P) < 8:
+        return 0, 0.0
+    _, mask = cv2.findFundamentalMat(
+        np.ascontiguousarray(P[:, :2]), np.ascontiguousarray(P[:, 2:]),
+        cv2.USAC_MAGSAC, thresh, 0.999999, 10000)
+    n = int(mask.sum()) if mask is not None else 0
+    return n, n / max(len(P), 1)
+
+
 def run_benchmark():
     import onnxruntime as ort
     from PIL import Image
@@ -168,15 +184,18 @@ def run_benchmark():
         P_pt = pairs(E.to_np(mt[0]), E.to_np(ka), E.to_np(kb), hA, wA, hB, wB)
         P_on = pairs(mo[0], kA, kB, hA, wA, hB, wB)
 
+        inl, ratio = ransac_inliers(P_on)
         row = dict(name=c["name"], H=H, W=W, desc=side, kpts=k,
                    mpix=round(H * W / 1e6, 3),
                    detect_ms=round(2 * t_det, 2), describe_ms=round(2 * t_dsc, 2),
                    match_ms=round(t_mat, 2), total_ms=round(total, 2),
                    fps=round(1000.0 / total, 2), matches=len(P_on),
+                   inliers=inl, inlier_ratio=round(ratio * 100, 1),
                    fidelity=round(overlap(P_on, P_pt, 2.0) * 100, 2))
         rows.append(row)
         E.log(f"{c['name']:9} {H}x{W} k={k}: total {row['total_ms']}ms "
-              f"{row['fps']}fps {row['matches']}m {row['fidelity']}%")
+              f"{row['fps']}fps {row['matches']}m {inl}inl ({row['inlier_ratio']}%) "
+              f"{row['fidelity']}%")
 
     os.makedirs(DOCS, exist_ok=True)
     meta = dict(gpu=gpu, runtime=f"onnxruntime {ort.__version__} (CUDA EP)",
@@ -290,25 +309,44 @@ def make_charts(meta):
         ax.margins(x=0.08, y=0.18)
         _titles(ax, "Latency scales ~linearly with pixels", sub)
 
+    def chart_inliers(ax):
+        # matches vs RANSAC-verified inliers (fundamental matrix, 3 px) per preset
+        inliers = [r.get("inliers", 0) for r in rows]
+        ratio = [r.get("inlier_ratio", 0) for r in rows]
+        w = 0.4
+        ax.bar(x - w / 2, matches, w, label="matches", color="#B9C6DD")
+        b2 = ax.bar(x + w / 2, inliers, w, label="RANSAC inliers (F, 3 px)", color=PALETTE["match"])
+        for i, bb in enumerate(b2):
+            ax.text(bb.get_x() + bb.get_width() / 2, inliers[i] + max(matches) * 0.02,
+                    f"{inliers[i]}\n{ratio[i]:.0f}%", ha="center", va="bottom",
+                    fontsize=8, color=PALETTE["fg"], linespacing=1.2)
+        ax.set_xticks(x); ax.set_xticklabels(names)
+        ax.set_ylabel("correspondences")
+        ax.set_ylim(0, max(matches) * 1.2)
+        ax.legend(loc="upper left", fontsize=9.5)
+        _titles(ax, "Geometric inliers per preset", sub)
+
     for name, fn, size in [
         ("latency_breakdown", chart_latency, (8.2, 4.8)),
         ("speed_accuracy", chart_pareto, (8.0, 5.2)),
         ("fps", chart_fps, (8.2, 4.2)),
         ("latency_scaling", chart_scaling, (8.0, 4.8)),
+        ("inliers", chart_inliers, (8.6, 4.6)),
     ]:
         fig, ax = plt.subplots(figsize=size)
         fn(ax)
         fig.savefig(f"{DOCS}/{name}.png"); plt.close(fig)
 
-    # combined 2×2 dashboard (README hero)
-    fig, axs = plt.subplots(2, 2, figsize=(15.5, 10))
-    chart_latency(axs[0, 0]); chart_pareto(axs[0, 1])
+    # combined 2×3 dashboard (README hero)
+    fig, axs = plt.subplots(2, 3, figsize=(22, 10))
+    chart_latency(axs[0, 0]); chart_pareto(axs[0, 1]); chart_inliers(axs[0, 2])
     chart_fps(axs[1, 0]); chart_scaling(axs[1, 1])
-    fig.suptitle("LoMa · ONNX Runtime CUDA benchmark", fontsize=17, fontweight="bold", y=1.0)
-    fig.tight_layout(rect=[0, 0, 1, 0.98], h_pad=4.5, w_pad=3.5)
+    axs[1, 2].axis("off")
+    fig.suptitle("LoMa · ONNX Runtime CUDA benchmark", fontsize=18, fontweight="bold", y=1.0)
+    fig.tight_layout(rect=[0, 0, 1, 0.98], h_pad=4.5, w_pad=3.0)
     fig.savefig(f"{DOCS}/dashboard.png"); plt.close(fig)
 
-    E.log(f"wrote 5 charts (incl. dashboard) to {DOCS}/")
+    E.log(f"wrote 6 charts (incl. dashboard) to {DOCS}/")
 
 
 def main():

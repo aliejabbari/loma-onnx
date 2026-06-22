@@ -56,7 +56,9 @@ struct Options {
   std::string matcher_path;
 
   // ---- must match the exported ONNX trio ----
-  int detector_size = 512;     // square H=W the detector ONNX expects
+  int detector_size = 512;     // detector input height the ONNX expects
+  int detector_width = 0;      // detector input width; 0 → square (= detector_size).
+                               // set both for landscape presets (e.g. wide = 512×1024)
   int descriptor_size = 512;   // square H=W the descriptor ONNX expects
   int num_keypoints = 1024;    // baked into the detector graph (informational)
   int descriptor_dim = 128;    // 128 = DeDoDe-B (B128); 256 = DeDoDe-G (B/R/L/G)
